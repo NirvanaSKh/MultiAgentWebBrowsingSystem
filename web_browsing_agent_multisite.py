@@ -143,7 +143,7 @@ if st.button("Run Scraper"):
                 if "link" in df.columns:
                     df["link"] = df["link"].apply(lambda x: f"[🔗 Link]({x})")
                 st.markdown("### 🔍 Scraped Data")
-                st.write(df.to_markdown(index=False), unsafe_allow_html=True)
+                st.dataframe(df)
                 st.download_button("📥 Download CSV", df.to_csv(index=False).encode("utf-8"), file_name="mas_output.csv")
         except Exception as e:
             st.error(f"❌ {str(e)}")
