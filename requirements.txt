@@ -1,7 +1,7 @@
 streamlit
 pandas
 beautifulsoup4
-selenium
+requests
 openai
 langchain
 langchain-openai
