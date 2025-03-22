@@ -114,9 +114,7 @@ llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 def parse_prompt(prompt: str) -> dict:
     query = (
         "You're a task interpreter. Extract the site, category (quotes, books, blogs, news, ecommerce), "
-        "author, tag, and full site URL (if available) from this prompt:
-
-"
+        "author, tag, and full site URL (if available) from this prompt:\n\n"
         f"{prompt}
 
 "
