@@ -22,16 +22,31 @@ class WebBrowsingAgent:
             return urlparse(match.group(0)).netloc.lower()
         return None
 
+    def fallback_scraper(self, url):
+        res = requests.get(url)
+        soup = BeautifulSoup(res.text, "html.parser")
+        data = []
+        for tag in ['h1', 'h2', 'h3', 'p']:
+            for element in soup.find_all(tag):
+                text = element.get_text(strip=True)
+                if text:
+                    data.append({"tag": tag, "text": text})
+        return data
+
     def run(self, user_input: str, author=None, tag=None):
         domain = self.extract_domain(user_input)
         if not domain:
             raise ValueError("No valid domain found in input.")
+        url_match = re.search(r'https?://[^\s]+', user_input)
+        url = url_match.group(0) if url_match else None
         if domain in self.domain_scrapers:
             return self.domain_scrapers[domain](author, tag)
+        elif url:
+            return self.fallback_scraper(url)
         else:
-            raise ValueError(f"No scraper registered for domain: {domain}")
+            raise ValueError(f"Could not scrape: {domain}")
 
-# Built-in example scrapers
+# Built-in scrapers
 def scrape_quotes_toscrape(author_filter=None, tag_filter=None):
     base_url = "https://quotes.toscrape.com"
     all_data, next_url = [], "/page/1/"
@@ -98,50 +113,31 @@ def parse_user_input(user_input: str) -> dict:
         return {}
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="MAS Smart Web Scraper", layout="wide")
-st.title("🌐 MAS: Domain-Aware Multi-Agent Web Scraper")
+st.set_page_config(page_title="MAS Web Scraper (Auto-Fallback)", layout="wide")
+st.title("🌐 MAS: Auto-Fallback Multi-Agent Web Scraper")
 
-agent = WebBrowsingAgent("DynamicAgent")
+agent = WebBrowsingAgent("MASAgent")
 agent.register_domain("quotes.toscrape.com", scrape_quotes_toscrape)
 agent.register_domain("books.toscrape.com", scrape_books_toscrape)
 agent.register_domain("www.python.org", scrape_python_blogs)
 
-user_input = st.text_input("What do you want to scrape?", placeholder="e.g., Get quotes from https://quotes.toscrape.com")
-custom_code = st.text_area("Optional: Provide a custom scraper function (must return a list of dicts)", height=200)
-custom_submit = st.button("Run Scraper")
-
-if custom_submit:
-    with st.spinner("Processing your request..."):
-        try:
-            filters = parse_user_input(user_input)
-            st.write("### 🎯 Detected Filters", filters)
-
-            domain = agent.extract_domain(user_input)
-            if domain not in agent.domain_scrapers:
-                if custom_code:
-                    try:
-                        exec_globals = {}
-                        exec(custom_code, exec_globals)
-                        custom_func = exec_globals.get("custom_scraper")
-                        if callable(custom_func):
-                            agent.register_domain(domain, custom_func)
-                            st.success(f"✅ Registered custom scraper for {domain}")
-                        else:
-                            st.error("No function named `custom_scraper` found.")
-                    except Exception as e:
-                        st.error(f"Error in custom scraper: {str(e)}")
+user_input = st.text_input("What do you want to scrape?", placeholder="e.g., Scrape quotes from https://quotes.toscrape.com")
+if st.button("Run Scraper"):
+    if not user_input.strip():
+        st.warning("Please enter a valid prompt.")
+    else:
+        with st.spinner("Processing request..."):
+            try:
+                filters = parse_user_input(user_input)
+                st.write("### 🎯 Detected Filters", filters)
+                data = agent.run(user_input, author=filters.get("author"), tag=filters.get("tag"))
+                if not data:
+                    st.warning("No results found.")
                 else:
-                    st.warning(f"No scraper found for {domain}, and no custom code provided.")
-                    st.stop()
-
-            data = agent.run(user_input, author=filters.get("author"), tag=filters.get("tag"))
-            if not data:
-                st.warning("No results found.")
-            else:
-                df = pd.DataFrame(data)
-                st.dataframe(df)
-                csv = df.to_csv(index=False).encode("utf-8")
-                st.download_button("📥 Download CSV", csv, file_name="results.csv")
-                st.json(data)
-        except Exception as err:
-            st.error(f"❌ {str(err)}")
+                    df = pd.DataFrame(data)
+                    st.dataframe(df)
+                    csv = df.to_csv(index=False).encode("utf-8")
+                    st.download_button("📥 Download CSV", csv, file_name="results.csv")
+                    st.json(data)
+            except Exception as err:
+                st.error(f"❌ {str(err)}")
