@@ -15,7 +15,7 @@ class MASDispatcherAgent:
             "books": self.scrape_books,
             "blogs": self.scrape_blogs,
             "news": self.scrape_news,
-            "ecommerce": self.scrape_books  # fallback to books.toscrape
+            "ecommerce": self.scrape_books  # fallback for ecommerce
         }
 
     def extract_domain(self, text):
@@ -108,19 +108,16 @@ class MASDispatcherAgent:
             return self.category_routes[category](filters)
         return self.fallback(filters)
 
-# LLM to extract task filters + category
+# LLM-based task parsing
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 
 def parse_prompt(prompt: str) -> dict:
-   query = f"""
-You're a task interpreter. Extract the site, category (quotes, books, blogs, news, ecommerce),
+    query = f"""You're a task interpreter. Extract the site, category (quotes, books, blogs, news, ecommerce),
 author, tag, and full site URL (if available) from this prompt:
 
 {prompt}
 
-Respond in JSON format like: {{"category": "quotes", "author": "Albert Einstein", "tag": "life", "site": "https://quotes.toscrape.com"}}
-"""
-
+Respond in JSON format like: {{"category": "quotes", "author": "Albert Einstein", "tag": "life", "site": "https://quotes.toscrape.com"}}""" 
     result = llm.invoke([HumanMessage(content=query)])
     try:
         return json.loads(result.content)
@@ -144,7 +141,7 @@ if st.button("Run Scraper"):
             else:
                 df = pd.DataFrame(data)
                 if "link" in df.columns:
-                    df["link"] = df["link"].apply(lambda x: f"[🔗 Open]({x})")
+                    df["link"] = df["link"].apply(lambda x: f"[🔗 Link]({x})")
                 st.markdown("### 🔍 Scraped Data")
                 st.write(df.to_markdown(index=False), unsafe_allow_html=True)
                 st.download_button("📥 Download CSV", df.to_csv(index=False).encode("utf-8"), file_name="mas_output.csv")
