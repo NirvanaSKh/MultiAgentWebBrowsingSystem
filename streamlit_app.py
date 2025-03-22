@@ -1,14 +1,10 @@
 import streamlit as st
 import pandas as pd
 import json
-import time
+import requests
+from bs4 import BeautifulSoup
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
 
 # --- LangChain LLM ---
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
@@ -29,18 +25,13 @@ def parse_user_input(user_input: str) -> dict:
     except json.JSONDecodeError:
         return {}
 
-def setup_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    return webdriver.Chrome(options=options)
-
-def scrape_quotes(driver, author_filter=None, tag_filter=None):
-    driver.get("https://quotes.toscrape.com")
+def scrape_quotes(author_filter=None, tag_filter=None):
     all_data = []
-    while True:
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+    base_url = "https://quotes.toscrape.com"
+    next_url = "/page/1/"
+    while next_url:
+        res = requests.get(base_url + next_url)
+        soup = BeautifulSoup(res.text, "html.parser")
         quotes = soup.find_all("div", class_="quote")
         for q in quotes:
             text = q.find("span", class_="text").text
@@ -51,36 +42,36 @@ def scrape_quotes(driver, author_filter=None, tag_filter=None):
             if tag_filter and tag_filter.lower() not in [t.lower() for t in tags]:
                 continue
             all_data.append({"quote": text, "author": author, "tags": ", ".join(tags)})
-        try:
-            next_btn = driver.find_element(By.CSS_SELECTOR, ".next > a")
-            next_btn.click()
-            time.sleep(1)
-        except NoSuchElementException:
-            break
+        next_btn = soup.select_one(".next > a")
+        next_url = next_btn["href"] if next_btn else None
     return all_data
 
-def scrape_books(driver):
-    driver.get("https://books.toscrape.com/")
+def scrape_books():
     all_data = []
-    while True:
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+    base_url = "https://books.toscrape.com"
+    next_url = "catalogue/page-1.html"
+    while next_url:
+        res = requests.get(f"{base_url}/{next_url}")
+        soup = BeautifulSoup(res.text, "html.parser")
         books = soup.find_all("article", class_="product_pod")
         for b in books:
             title = b.h3.a['title']
             price = b.find("p", class_="price_color").text
             availability = b.find("p", class_="instock availability").text.strip()
             all_data.append({"title": title, "price": price, "availability": availability})
-        try:
-            next_btn = driver.find_element(By.CSS_SELECTOR, ".next > a")
-            next_btn.click()
-            time.sleep(1)
-        except NoSuchElementException:
-            break
+        next_btn = soup.select_one(".next > a")
+        if next_btn:
+            current_page = next_url.split("/")[-1]
+            page_num = int(current_page.split("-")[1].split(".")[0]) + 1
+            next_url = f"catalogue/page-{page_num}.html"
+        else:
+            next_url = None
     return all_data
 
-def scrape_blogs(driver):
-    driver.get("https://www.python.org/blogs/")
-    soup = BeautifulSoup(driver.page_source, "html.parser")
+def scrape_blogs():
+    url = "https://www.python.org/blogs/"
+    res = requests.get(url)
+    soup = BeautifulSoup(res.text, "html.parser")
     blogs = soup.select("ul.list-recent-posts li")
     return [{"title": b.a.text, "link": b.a['href'], "date": b.find("time").text} for b in blogs]
 
@@ -88,17 +79,14 @@ def run_scraper(parsed_filters):
     site = parsed_filters.get("site")
     author = parsed_filters.get("author")
     tag = parsed_filters.get("tag")
-    driver = setup_driver()
     if site == "quotes":
-        data = scrape_quotes(driver, author, tag)
+        data = scrape_quotes(author, tag)
     elif site == "books":
-        data = scrape_books(driver)
+        data = scrape_books()
     elif site == "blogs":
-        data = scrape_blogs(driver)
+        data = scrape_blogs()
     else:
-        driver.quit()
         return [], "Invalid site"
-    driver.quit()
     return data, None
 
 # --- Streamlit UI ---
