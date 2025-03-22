@@ -112,15 +112,15 @@ class MASDispatcherAgent:
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 
 def parse_prompt(prompt: str) -> dict:
-    query = (
-        "You're a task interpreter. Extract the site, category (quotes, books, blogs, news, ecommerce), "
-        "author, tag, and full site URL (if available) from this prompt:\n\n"
-        f"{prompt}
+   query = f"""
+You're a task interpreter. Extract the site, category (quotes, books, blogs, news, ecommerce),
+author, tag, and full site URL (if available) from this prompt:
 
-"
-        "Respond in JSON format like: {"category": "quotes", "author": "Albert Einstein", "
-        ""tag": "life", "site": "https://quotes.toscrape.com"}"
-    )
+{prompt}
+
+Respond in JSON format like: {{"category": "quotes", "author": "Albert Einstein", "tag": "life", "site": "https://quotes.toscrape.com"}}
+"""
+
     result = llm.invoke([HumanMessage(content=query)])
     try:
         return json.loads(result.content)
