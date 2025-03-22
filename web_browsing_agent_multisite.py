@@ -79,19 +79,7 @@ class MASDispatcherAgent:
             "date": b.find("time").text
         } for b in soup.select("ul.list-recent-posts li")]
 
-    def scrape_bbc_news(self, filters=None):
-        url = "https://www.bbc.com/news"
-        res = requests.get(url)
-        soup = BeautifulSoup(res.text, "html.parser")
-        headlines = soup.select("h3")
-        return [{"headline": h.text.strip(), "link": url} for h in headlines if h.text.strip()]
-
     def scrape_news(self, filters=None):
-        url = "https://www.reuters.com"
-        res = requests.get(url)
-        soup = BeautifulSoup(res.text, "html.parser")
-        headlines = soup.find_all("h3")
-        return [{"headline": h.text.strip(), "link": url} for h in headlines if h.text.strip()]
         url = "https://www.reuters.com"
         res = requests.get(url)
         soup = BeautifulSoup(res.text, "html.parser")
@@ -107,16 +95,18 @@ class MASDispatcherAgent:
             raise ValueError("No site URL provided for fallback.")
         res = requests.get(url)
         soup = BeautifulSoup(res.text, "html.parser")
+
+        # Extract anchors with visible text
         anchors = soup.find_all("a")
-        keyword_tags = ["headline", "story", "news"]
+        keyword_tags = ["headline", "story", "news", "article", "update"]
         data = []
         for a in anchors:
             text = a.get_text(strip=True)
-            if not text:
+            href = a.get("href")
+            if not text or not href:
                 continue
-            if any(kw in text.lower() for kw in keyword_tags):
-                href = a.get("href")
-                full_url = href if href and href.startswith("http") else url
+            if any(kw in text.lower() for kw in keyword_tags) or len(text.split()) > 5:
+                full_url = href if href.startswith("http") else urlparse(url)._replace(path=href).geturl()
                 data.append({"text": text, "link": full_url})
         return data
         url = filters.get("site") or filters.get("url")
@@ -132,10 +122,8 @@ class MASDispatcherAgent:
           for el in soup.find_all(tag) if el.text.strip()]
 
     def route(self, filters):
-        domain = filters.get("site", "")
-        if "bbc" in domain.lower():
-            return self.scrape_bbc_news(filters)
-        
+        return self.fallback(filters)
+
         category = filters.get("category", "").lower()
         if category in self.category_routes:
             return self.category_routes[category](filters)
