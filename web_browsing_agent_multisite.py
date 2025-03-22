@@ -1,10 +1,18 @@
+import streamlit as st
+import pandas as pd
+import json
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 class WebBrowsingAgent:
     def __init__(self, name):
         self.name = name
+        self.custom_sites = {}
+
+    def register_site(self, site_name, scraper_function):
+        self.custom_sites[site_name] = scraper_function
 
     def scrape_quotes(self, author_filter=None, tag_filter=None):
         all_data = []
@@ -64,5 +72,63 @@ class WebBrowsingAgent:
             return self.scrape_books()
         elif site == "blogs":
             return self.scrape_blogs()
+        elif site in self.custom_sites:
+            return self.custom_sites[site]()
         else:
             raise ValueError(f"Unsupported site: {site}")
+
+# LangChain LLM
+llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+
+def parse_user_input(user_input: str) -> dict:
+    prompt = (
+        "You are a filter extractor. Given a user input, extract:\n"
+        "- author (if any)\n"
+        "- tag (if any)\n"
+        "- site: quotes, books, blogs or custom\n\n"
+        "Respond ONLY in JSON format like:\n"
+        '{"author": "Albert Einstein", "tag": "inspirational", "site": "quotes"}\n\n'
+        f"User Input: {user_input}"
+    )
+    result = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        return json.loads(result.content)
+    except json.JSONDecodeError:
+        return {}
+
+# Example Custom Scraper (static)
+def custom_site_scraper():
+    url = "https://httpbin.org/html"
+    res = requests.get(url)
+    soup = BeautifulSoup(res.text, "html.parser")
+    title = soup.find("h1").text if soup.find("h1") else "No <h1> found"
+    return [{"title": title, "source": url}]
+
+# Initialize Agent and register custom site
+agent = WebBrowsingAgent("WebScraper")
+agent.register_site("custom_site", custom_site_scraper)
+
+# --- Streamlit UI ---
+st.set_page_config(page_title="MAS Smart Scraper", layout="wide")
+st.title("🧠 MAS: Multi-Agent Smart Web Scraper")
+
+user_input = st.text_input("Enter your scraping request (e.g. 'Get quotes by Steve Jobs about life')")
+if st.button("Run Agent"):
+    if user_input.strip() == "":
+        st.warning("Please enter a prompt.")
+    else:
+        with st.spinner("Thinking..."):
+            parsed = parse_user_input(user_input)
+            st.write("**Detected Filters:**", parsed)
+            try:
+                data = agent.run(parsed.get("site"), parsed.get("author"), parsed.get("tag"))
+                if not data:
+                    st.warning("No results found.")
+                else:
+                    df = pd.DataFrame(data)
+                    st.dataframe(df)
+                    csv = df.to_csv(index=False).encode("utf-8")
+                    st.download_button("📥 Download CSV", csv, file_name=f"{parsed['site']}_results.csv")
+                    st.json(data)
+            except Exception as e:
+                st.error(str(e))
